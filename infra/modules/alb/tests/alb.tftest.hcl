@@ -4,7 +4,6 @@ variables {
   vpc_id            = "vpc-test123"
   public_subnet_ids = ["subnet-aaa", "subnet-bbb"]
   env               = "test"
-  domain_name       = ""
   certificate_arn   = ""
 }
 

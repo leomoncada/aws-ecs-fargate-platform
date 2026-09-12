@@ -209,3 +209,45 @@ run "service_discovery_namespace" {
     error_message = "Service discovery namespace should use environment"
   }
 }
+
+# Without a circuit breaker a crash-looping deployment is reported as a
+# successful deploy and stays broken until someone notices by hand.
+run "services_roll_back_automatically_on_failed_deployment" {
+  command = plan
+
+  assert {
+    condition     = aws_ecs_service.backend.deployment_circuit_breaker[0].enable
+    error_message = "Backend service must enable the deployment circuit breaker"
+  }
+
+  assert {
+    condition     = aws_ecs_service.backend.deployment_circuit_breaker[0].rollback
+    error_message = "Backend circuit breaker must roll back, not just stop the deployment"
+  }
+
+  assert {
+    condition     = aws_ecs_service.frontend.deployment_circuit_breaker[0].enable
+    error_message = "Frontend service must enable the deployment circuit breaker"
+  }
+
+  assert {
+    condition     = aws_ecs_service.frontend.deployment_circuit_breaker[0].rollback
+    error_message = "Frontend circuit breaker must roll back, not just stop the deployment"
+  }
+}
+
+# A container that is still warming up must not be killed by the load balancer
+# health check before it has had a chance to answer.
+run "services_allow_a_health_check_grace_period" {
+  command = plan
+
+  assert {
+    condition     = aws_ecs_service.backend.health_check_grace_period_seconds > 0
+    error_message = "Backend service needs a health check grace period for slow starts"
+  }
+
+  assert {
+    condition     = aws_ecs_service.frontend.health_check_grace_period_seconds > 0
+    error_message = "Frontend service needs a health check grace period for slow starts"
+  }
+}

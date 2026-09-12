@@ -1,97 +1,91 @@
-name: Deploy
+# Production promotion only. Staging deploys live in ci.yml, gated on the
+# build job, so a deploy can never race the image it is supposed to deploy.
+name: Promote to production
 
 on:
   push:
-    branches: [staging, prod]
+    branches: [prod]
+
+concurrency:
+  group: promote-prod
+  cancel-in-progress: false
 
 env:
   AWS_REGION: us-east-1
 
 jobs:
-  deploy-staging:
+  promote:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/staging'
-    environment: staging
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Update ECS backend (staging)
-        run: |
-          aws ecs update-service \
-            --cluster ${{ secrets.ECS_CLUSTER_STAGING }} \
-            --service ${{ secrets.ECS_SERVICE_BACKEND_STAGING }} \
-            --force-new-deployment \
-            --region ${{ env.AWS_REGION }}
-
-      - name: Update ECS frontend (staging)
-        run: |
-          aws ecs update-service \
-            --cluster ${{ secrets.ECS_CLUSTER_STAGING }} \
-            --service ${{ secrets.ECS_SERVICE_FRONTEND_STAGING }} \
-            --force-new-deployment \
-            --region ${{ env.AWS_REGION }}
-
-  deploy-prod:
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/prod'
     environment: production
     permissions:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v6
-
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Promote backend image (staging → prod)
+      # The staging tag is mutable. Resolve it to an immutable digest once,
+      # up front, and use that digest for every subsequent step so the whole
+      # promotion refers to one artefact we can name afterwards.
+      - name: Resolve staging digests
+        id: resolve
         run: |
-          MANIFEST=$(aws ecr batch-get-image \
-            --repository-name ${{ secrets.ECR_REPOSITORY_BACKEND }} \
-            --image-ids imageTag=staging \
-            --query 'images[0].imageManifest' \
-            --output text)
-          aws ecr put-image \
-            --repository-name ${{ secrets.ECR_REPOSITORY_BACKEND }} \
-            --image-tag prod \
-            --image-manifest "$MANIFEST"
+          set -euo pipefail
+          for app in backend frontend; do
+            case "$app" in
+              backend)  repo="${{ secrets.ECR_REPOSITORY_BACKEND }}" ;;
+              frontend) repo="${{ secrets.ECR_REPOSITORY_FRONTEND }}" ;;
+            esac
+            digest=$(aws ecr describe-images \
+              --repository-name "$repo" \
+              --image-ids imageTag=staging \
+              --query 'imageDetails[0].imageDigest' \
+              --output text)
+            if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::could not resolve a digest for $repo:staging (got '$digest')"
+              exit 1
+            fi
+            echo "${app}=${digest}" >> "$GITHUB_OUTPUT"
+            echo "- ${app}: \`${digest}\`" >> "$GITHUB_STEP_SUMMARY"
+          done
 
-      - name: Promote frontend image (staging → prod)
+      - name: Promote images by digest
         run: |
-          MANIFEST=$(aws ecr batch-get-image \
-            --repository-name ${{ secrets.ECR_REPOSITORY_FRONTEND }} \
-            --image-ids imageTag=staging \
-            --query 'images[0].imageManifest' \
-            --output text)
-          aws ecr put-image \
-            --repository-name ${{ secrets.ECR_REPOSITORY_FRONTEND }} \
-            --image-tag prod \
-            --image-manifest "$MANIFEST"
+          set -euo pipefail
+          promote() {
+            local repo="$1" digest="$2"
+            manifest=$(aws ecr batch-get-image \
+              --repository-name "$repo" \
+              --image-ids imageDigest="$digest" \
+              --query 'images[0].imageManifest' \
+              --output text)
+            aws ecr put-image \
+              --repository-name "$repo" \
+              --image-tag prod \
+              --image-manifest "$manifest"
+          }
+          promote "${{ secrets.ECR_REPOSITORY_BACKEND }}"  "${{ steps.resolve.outputs.backend }}"
+          promote "${{ secrets.ECR_REPOSITORY_FRONTEND }}" "${{ steps.resolve.outputs.frontend }}"
 
-      - name: Update ECS backend (prod)
+      - name: Deploy services
         run: |
-          aws ecs update-service \
-            --cluster ${{ secrets.ECS_CLUSTER_PROD }} \
-            --service ${{ secrets.ECS_SERVICE_BACKEND_PROD }} \
-            --force-new-deployment \
-            --region ${{ env.AWS_REGION }}
+          set -euo pipefail
+          for svc in "${{ secrets.ECS_SERVICE_BACKEND_PROD }}" \
+                     "${{ secrets.ECS_SERVICE_FRONTEND_PROD }}"; do
+            aws ecs update-service \
+              --cluster "${{ secrets.ECS_CLUSTER_PROD }}" \
+              --service "$svc" \
+              --force-new-deployment \
+              --region "${{ env.AWS_REGION }}"
+          done
 
-      - name: Update ECS frontend (prod)
+      - name: Wait for services to stabilise
         run: |
-          aws ecs update-service \
-            --cluster ${{ secrets.ECS_CLUSTER_PROD }} \
-            --service ${{ secrets.ECS_SERVICE_FRONTEND_PROD }} \
-            --force-new-deployment \
-            --region ${{ env.AWS_REGION }}
+          aws ecs wait services-stable \
+            --cluster "${{ secrets.ECS_CLUSTER_PROD }}" \
+            --services "${{ secrets.ECS_SERVICE_BACKEND_PROD }}" \
+                       "${{ secrets.ECS_SERVICE_FRONTEND_PROD }}" \
+            --region "${{ env.AWS_REGION }}"

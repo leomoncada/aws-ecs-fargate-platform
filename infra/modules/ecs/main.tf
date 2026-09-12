@@ -227,6 +227,21 @@ resource "aws_ecs_service" "backend" {
   task_definition = aws_ecs_task_definition.backend.arn
   desired_count   = var.autoscaling_min_capacity
   launch_type     = "FARGATE"
+
+  # A failed deployment should undo itself rather than sit there crash-looping.
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  # Give a cold container time to answer before the ALB declares it unhealthy.
+  health_check_grace_period_seconds = 60
+
+  lifecycle {
+    # Autoscaling owns desired_count at runtime. Without this, any later
+    # apply resets a scaled-out service back to the minimum.
+    ignore_changes = [desired_count]
+  }
   network_configuration {
     subnets          = var.app_subnet_ids
     security_groups  = [aws_security_group.ecs.id]
@@ -253,6 +268,21 @@ resource "aws_ecs_service" "frontend" {
   task_definition = aws_ecs_task_definition.frontend.arn
   desired_count   = var.autoscaling_min_capacity
   launch_type     = "FARGATE"
+
+  # A failed deployment should undo itself rather than sit there crash-looping.
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  # Give a cold container time to answer before the ALB declares it unhealthy.
+  health_check_grace_period_seconds = 60
+
+  lifecycle {
+    # Autoscaling owns desired_count at runtime. Without this, any later
+    # apply resets a scaled-out service back to the minimum.
+    ignore_changes = [desired_count]
+  }
   network_configuration {
     subnets          = var.app_subnet_ids
     security_groups  = [aws_security_group.ecs.id]

@@ -6,17 +6,25 @@ terraform {
       version = "~> 5.0"
     }
   }
-  backend "s3" {
-    bucket         = "your-terraform-state-bucket"
-    key            = "portfolio/prod/terraform.tfstate"
-    region         = "us-east-1"
-    encrypt        = true
-    dynamodb_table = "your-terraform-state-lock"
-  }
+  # Configured at init time:
+  #   terraform init -backend-config=backend.hcl
+  # See backend-config.example.
+  backend "s3" {}
 }
 
 provider "aws" {
   region = var.aws_region
+
+  # Cost allocation and ownership: applied to every resource in this root
+  # so nothing has to remember to tag itself.
+  default_tags {
+    tags = {
+      Project     = "portfolio"
+      Environment = "prod"
+      ManagedBy   = "terraform"
+      Owner       = "leomoncada"
+    }
+  }
 }
 
 module "portfolio" {

@@ -22,19 +22,47 @@ If you previously promoted a known-good image to `prod` (or use `staging`), you 
    ```
 4. Wait for the deployment to reach `RUNNING` (ECS console or `aws ecs describe-services`).
 
-## Option 2: Roll back to previous task definition revision
+## Option 2: redeploy a previous image by digest
 
-If ECS is using a specific task definition revision and the new one is broken:
+Selecting an earlier **task definition revision** does not roll anything back
+in this setup. Every revision refers to the same mutable `:prod` tag, so
+revision 41 and revision 42 resolve to the identical image. Roll back the
+image instead.
 
-1. In **ECS console**: Cluster → Service → Update service → Revision: select the previous revision → Update.
-2. Or with CLI:
+1. List recent images, newest first:
+
    ```bash
-   # List task definition revisions
-   aws ecs list-task-definitions --family-prefix portfolio-prod-backend
-   # Update service to use previous revision (e.g. portfolio-prod-backend:42)
-   aws ecs update-service --cluster portfolio-prod-cluster --service portfolio-prod-backend \
-     --task-definition portfolio-prod-backend:42 --force-new-deployment --region us-east-1
+   aws ecr describe-images \
+     --repository-name portfolio-backend \
+     --query 'reverse(sort_by(imageDetails,&imagePushedAt))[:5].[imageDigest,imageTags,imagePushedAt]' \
+     --output table
    ```
+
+2. Re-tag the last known good digest as `prod`:
+
+   ```bash
+   GOOD=sha256:...
+   MANIFEST=$(aws ecr batch-get-image \
+     --repository-name portfolio-backend \
+     --image-ids imageDigest="$GOOD" \
+     --query 'images[0].imageManifest' --output text)
+   aws ecr put-image \
+     --repository-name portfolio-backend \
+     --image-tag prod --image-manifest "$MANIFEST"
+   ```
+
+3. Force a new deployment and wait for it:
+
+   ```bash
+   aws ecs update-service --cluster <cluster> --service <service> --force-new-deployment
+   aws ecs wait services-stable --cluster <cluster> --services <service>
+   ```
+
+Note that the services have `deployment_circuit_breaker` with `rollback = true`,
+so a deployment that never reaches a steady state is reverted automatically.
+This procedure is for the case where the new version starts cleanly but is
+wrong.
+
 
 ## After rollback
 
