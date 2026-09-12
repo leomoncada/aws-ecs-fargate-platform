@@ -12,6 +12,17 @@
 - **Backend / Frontend:** Log streams are sent to CloudWatch Logs via the `awslogs` driver in ECS task definitions (see `infra/modules/ecs/main.tf`). Log groups: `/ecs/portfolio-<env>-backend`, `/ecs/portfolio-<env>-frontend`. Retention: 14 days (configurable in Terraform).
 - **Aggregation:** CloudWatch Logs Insights can query across log groups. Optionally export to S3 or a third-party (e.g. Datadog) via subscription filters.
 
+## Health endpoints
+
+| Endpoint | Checks | Used by |
+|---|---|---|
+| `GET /health` (backend) | Process is serving | ALB backend target group |
+| `GET /api/health` (frontend) | Process is serving | ALB frontend target group |
+| `GET /api/health/ready` (frontend) | Backend reachable within 2s | Humans and monitors only |
+
+`/api/health/ready` is deliberately not wired to the load balancer. See
+DECISIONS.md for why.
+
 ## Metrics to collect
 
 - **ECS:** CPUUtilization, MemoryUtilization per service (default in Container Insights).
