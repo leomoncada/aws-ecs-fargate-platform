@@ -27,7 +27,9 @@ jobs:
 
       - name: Backend lint (ruff)
         run: |
-          pip install ruff
+          # Pinned: an unpinned ruff turns every new release into a
+          # potential red build with no code change on our side.
+          pip install ruff==0.16.7
           cd backend && ruff check app/
 
       - name: Backend test
