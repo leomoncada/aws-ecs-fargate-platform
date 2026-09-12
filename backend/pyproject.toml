@@ -1,0 +1,9 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+# Selected explicitly. Relying on ruff's defaults means the lint result
+# changes whenever ruff ships a release, which is how this job started
+# failing without a single line of application code changing.
+select = ["E", "F", "W", "I", "UP", "B", "DTZ", "C4", "SIM"]

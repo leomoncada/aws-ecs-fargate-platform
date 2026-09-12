@@ -1,5 +1,6 @@
-from datetime import date, timedelta
 import random
+from datetime import UTC, datetime, timedelta
+
 from app.models import Asset, Insight
 
 
@@ -10,7 +11,7 @@ def get_assets() -> list[Asset]:
     assets = []
     for i in range(20):
         status = random.choices(statuses, weights=[0.6, 0.2, 0.2])[0]
-        due_date = date.today() + timedelta(days=random.randint(-90, 180))
+        due_date = datetime.now(UTC).date() + timedelta(days=random.randint(-90, 180))
         assets.append(
             Asset(
                 id=f"asset-{i+1:03d}",

@@ -7,8 +7,8 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.logging_config import configure_logging, get_logger
-from app.models import Asset, Insight, HealthResponse
-from app.services import get_assets, calculate_insights
+from app.models import Asset, HealthResponse, Insight
+from app.services import calculate_insights, get_assets
 
 configure_logging()
 logger = get_logger(__name__)
