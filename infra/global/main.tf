@@ -11,16 +11,22 @@ terraform {
     }
   }
   # Use a separate state from per-env infra (e.g. key = "portfolio/global/terraform.tfstate")
-  # backend "s3" {
-  #   bucket         = "your-terraform-state-bucket"
-  #   key            = "portfolio/global/terraform.tfstate"
-  #   region         = "us-east-1"
-  #   encrypt        = true
-  # }
+  backend "s3" {}
 }
 
 provider "aws" {
   region = var.aws_region
+
+  # Cost allocation and ownership: applied to every resource in this root
+  # so nothing has to remember to tag itself.
+  default_tags {
+    tags = {
+      Project     = "portfolio"
+      Environment = "global"
+      ManagedBy   = "terraform"
+      Owner       = "leomoncada"
+    }
+  }
 }
 
 resource "aws_ecr_repository" "backend" {

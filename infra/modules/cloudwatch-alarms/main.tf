@@ -98,8 +98,11 @@ resource "aws_cloudwatch_metric_alarm" "backend_no_tasks" {
   statistic           = "Average"
   threshold           = 1
   alarm_description   = "ECS backend has no running tasks"
-  alarm_actions       = [aws_sns_topic.alarms.arn]
-  ok_actions          = [aws_sns_topic.alarms.arn]
+  # When the service or target group disappears the metric stops being
+  # published. Without this the alarm goes to INSUFFICIENT_DATA, not ALARM.
+  treat_missing_data = "breaching"
+  alarm_actions      = [aws_sns_topic.alarms.arn]
+  ok_actions         = [aws_sns_topic.alarms.arn]
   dimensions = {
     ClusterName = var.cluster_name
     ServiceName = var.backend_service_name
@@ -163,8 +166,11 @@ resource "aws_cloudwatch_metric_alarm" "frontend_no_tasks" {
   statistic           = "Average"
   threshold           = 1
   alarm_description   = "ECS frontend has no running tasks"
-  alarm_actions       = [aws_sns_topic.alarms.arn]
-  ok_actions          = [aws_sns_topic.alarms.arn]
+  # When the service or target group disappears the metric stops being
+  # published. Without this the alarm goes to INSUFFICIENT_DATA, not ALARM.
+  treat_missing_data = "breaching"
+  alarm_actions      = [aws_sns_topic.alarms.arn]
+  ok_actions         = [aws_sns_topic.alarms.arn]
   dimensions = {
     ClusterName = var.cluster_name
     ServiceName = var.frontend_service_name
@@ -197,6 +203,27 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
   }
 }
 
+resource "aws_cloudwatch_metric_alarm" "alb_target_5xx" {
+  count               = var.alb_load_balancer_dimension != "" ? 1 : 0
+  alarm_name          = "portfolio-${var.env}-alb-target-5xx"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "HTTPCode_Target_5XX_Count"
+  namespace           = "AWS/ApplicationELB"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = var.alarm_alb_5xx_threshold
+  alarm_description   = "Application returned 5xx responses above ${var.alarm_alb_5xx_threshold}"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
+  ok_actions          = [aws_sns_topic.alarms.arn]
+  dimensions = {
+    LoadBalancer = var.alb_load_balancer_dimension
+  }
+  tags = {
+    Name = "portfolio-${var.env}-alb-target-5xx"
+  }
+}
+
 resource "aws_cloudwatch_metric_alarm" "backend_unhealthy_hosts" {
   count               = var.alb_load_balancer_dimension != "" && var.backend_target_group_arn_suffix != "" ? 1 : 0
   alarm_name          = "portfolio-${var.env}-alb-backend-unhealthy-hosts"
@@ -208,8 +235,11 @@ resource "aws_cloudwatch_metric_alarm" "backend_unhealthy_hosts" {
   statistic           = "Average"
   threshold           = var.alarm_alb_unhealthy_hosts_threshold
   alarm_description   = "Backend target group has unhealthy hosts"
-  alarm_actions       = [aws_sns_topic.alarms.arn]
-  ok_actions          = [aws_sns_topic.alarms.arn]
+  # When the service or target group disappears the metric stops being
+  # published. Without this the alarm goes to INSUFFICIENT_DATA, not ALARM.
+  treat_missing_data = "breaching"
+  alarm_actions      = [aws_sns_topic.alarms.arn]
+  ok_actions         = [aws_sns_topic.alarms.arn]
   dimensions = {
     LoadBalancer = var.alb_load_balancer_dimension
     TargetGroup  = var.backend_target_group_arn_suffix
@@ -230,8 +260,11 @@ resource "aws_cloudwatch_metric_alarm" "frontend_unhealthy_hosts" {
   statistic           = "Average"
   threshold           = var.alarm_alb_unhealthy_hosts_threshold
   alarm_description   = "Frontend target group has unhealthy hosts"
-  alarm_actions       = [aws_sns_topic.alarms.arn]
-  ok_actions          = [aws_sns_topic.alarms.arn]
+  # When the service or target group disappears the metric stops being
+  # published. Without this the alarm goes to INSUFFICIENT_DATA, not ALARM.
+  treat_missing_data = "breaching"
+  alarm_actions      = [aws_sns_topic.alarms.arn]
+  ok_actions         = [aws_sns_topic.alarms.arn]
   dimensions = {
     LoadBalancer = var.alb_load_balancer_dimension
     TargetGroup  = var.frontend_target_group_arn_suffix

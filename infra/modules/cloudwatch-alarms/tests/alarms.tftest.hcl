@@ -200,3 +200,64 @@ run "custom_thresholds" {
     error_message = "Memory threshold should follow variable"
   }
 }
+
+# An ECS service that drops to zero tasks stops publishing RunningTaskCount
+# altogether. With the CloudWatch default of treat_missing_data = "missing"
+# the alarm goes to INSUFFICIENT_DATA instead of ALARM, so the outage that
+# matters most never pages anyone.
+run "no_tasks_alarms_treat_missing_data_as_breaching" {
+  command = plan
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.backend_no_tasks.treat_missing_data == "breaching"
+    error_message = "Backend no-tasks alarm must treat missing data as breaching, or it cannot fire when the service has zero tasks"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.frontend_no_tasks.treat_missing_data == "breaching"
+    error_message = "Frontend no-tasks alarm must treat missing data as breaching, or it cannot fire when the service has zero tasks"
+  }
+}
+
+# Same failure mode: an empty target group stops publishing UnHealthyHostCount.
+# These alarms are conditional on the ALB dimensions being supplied.
+run "unhealthy_hosts_alarms_treat_missing_data_as_breaching" {
+  command = plan
+
+  variables {
+    alb_load_balancer_dimension      = "app/portfolio-test-alb/abc123"
+    backend_target_group_arn_suffix  = "targetgroup/portfolio-test-backend/def456"
+    frontend_target_group_arn_suffix = "targetgroup/portfolio-test-frontend/ghi789"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.backend_unhealthy_hosts[0].treat_missing_data == "breaching"
+    error_message = "Backend unhealthy-hosts alarm must treat missing data as breaching"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.frontend_unhealthy_hosts[0].treat_missing_data == "breaching"
+    error_message = "Frontend unhealthy-hosts alarm must treat missing data as breaching"
+  }
+}
+
+# HTTPCode_ELB_5XX_Count only counts errors the load balancer itself generates.
+# A 500 returned by FastAPI or Next.js is a Target 5xx and is invisible to it,
+# which is precisely the case docs/runbooks/incidents.md is written around.
+run "alarm_on_application_5xx_not_only_load_balancer_5xx" {
+  command = plan
+
+  variables {
+    alb_load_balancer_dimension = "app/portfolio-test-alb/abc123"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.alb_target_5xx[0].metric_name == "HTTPCode_Target_5XX_Count"
+    error_message = "There must be an alarm on HTTPCode_Target_5XX_Count so application errors page someone"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.alb_target_5xx[0].namespace == "AWS/ApplicationELB"
+    error_message = "Target 5xx alarm should use the AWS/ApplicationELB namespace"
+  }
+}

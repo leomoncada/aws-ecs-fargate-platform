@@ -22,7 +22,12 @@
 
 ## Required GitHub secrets
 
-- `AWS_ROLE_ARN` — IAM role ARN for OIDC (assumed by the workflow).
+- `AWS_BUILD_ROLE_ARN`, IAM role for the build job. Can push to ECR only.
+- `AWS_DEPLOY_ROLE_ARN`, IAM role for the deploy and promotion jobs. Can update ECS.
+
+  Both are created by `infra/global` (see `oidc.tf`) and are restricted by an
+  OIDC `sub` condition: the build role only from `refs/heads/staging`, the
+  deploy role only from the `staging` and `production` GitHub Environments.
 - `ECR_REPOSITORY_BACKEND` — ECR repository name (e.g. `portfolio-backend`).
 - `ECR_REPOSITORY_FRONTEND` — ECR repository name (e.g. `portfolio-frontend`).
 - `ECS_CLUSTER_STAGING`, `ECS_SERVICE_BACKEND_STAGING`, `ECS_SERVICE_FRONTEND_STAGING`.
